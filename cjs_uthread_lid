@@ -1,0 +1,201 @@
+
+/*********************************************************
+Charudut Shetty
+COMS 552
+Assignment #1
+*********************************************************/
+
+/*
+***************************
+Resources and References 
+***************************
+* Thread library implementation: http://www.cs.utexas.edu/~dahlin/Classes/UGOS/lectures/lec4.pdf
+* Class lecture materials
+*/
+
+/***********************************
+CODE
+***********************************/
+
+/* 
+include all the standard libraries
+*/
+#include <stdlib.h>
+#include <stdio.h>
+#include <ucontext.h>
+
+/* 
+set values for PASS and FAIL
+*/
+#define PASS 0
+#define FAIL -1
+ 
+/*
+set stack size
+*/
+#define STACK (9999) 
+
+/* 
+define priority queue structure to handle scheduling of threads with nodes next and previous  
+*/
+struct LL_ULT_PRI_Q{
+	int priority; 
+	struct LL_ULT_PRI_Q* next; 
+	struct LL_ULT_PRI_Q* previous; 
+	ucontext_t* context; 
+};
+typedef struct LL_ULT_PRI_Q LL_ULT_PRI_Q;
+
+/*
+declaring static variables:-
+1. Head node
+2. Temporary variable to handle priority. 
+*/
+static LL_ULT_PRI_Q* ULT_HEAD;
+static yield_temp_variable;
+
+/*
+Insert to queue. I'm using Linked List to implement this.
+*/
+int LL_ULT_INSERT_Q(ucontext_t* context, int priority){ // from the test_case_1.c file we pass the priority value to this function
+int implement_status = FAIL; // assigning the value -1
+// int print_return_value;
+if(priority >= 0){ 
+	LL_ULT_PRI_Q* EXTRA_NEW_NODE = (LL_ULT_PRI_Q*) malloc(sizeof(LL_ULT_PRI_Q)); 
+	EXTRA_NEW_NODE->priority = priority; // set the priority of the new node from the value obtained in 'priority'
+	EXTRA_NEW_NODE->next = 0; // set node value of new node as 0
+	EXTRA_NEW_NODE->context = context; // set context of new node from the value obtained from the variable in structure
+	LL_ULT_PRI_Q* checking_node = ULT_HEAD; // This value is obtained from the static variable ULT_HEAD
+// checking if we have not reached the end of the queue priority is less than or equal to that of the new node
+		while(checking_node->next != 0 && checking_node->next->priority <= EXTRA_NEW_NODE->priority){
+			checking_node = checking_node->next; // set value of checking node as the value obtained from next field of checking node
+}
+EXTRA_NEW_NODE->next = checking_node->next;
+if(EXTRA_NEW_NODE->next != 0){
+EXTRA_NEW_NODE->next->previous = EXTRA_NEW_NODE;
+}
+EXTRA_NEW_NODE->previous = checking_node;
+checking_node->next = EXTRA_NEW_NODE;
+implement_status = PASS;
+} 
+/* else {
+printf("This is negative priority. Will exit.\n");
+return print_return;
+}
+*/ // This part is redundant as I have implemented checking of negative priority in uthread_create function
+return implement_status;
+}
+
+ 
+/*
+Remove from queue 
+*/
+
+LL_ULT_PRI_Q* LL_ULT_REMOVE_Q(int *validContextReturned){
+LL_ULT_PRI_Q* EXTRA_NEW_NODE = (LL_ULT_PRI_Q*) malloc(sizeof(LL_ULT_PRI_Q)); // declare new node
+//ucontext_t* context;
+if(ULT_HEAD->next != 0){
+EXTRA_NEW_NODE->context = ULT_HEAD->next->context;
+EXTRA_NEW_NODE->priority = ULT_HEAD->next->priority;
+LL_ULT_PRI_Q* latest_node = ULT_HEAD->next->next;
+free(ULT_HEAD->next); 
+ULT_HEAD->next = 0;
+ULT_HEAD->next = latest_node;
+if(ULT_HEAD->next != 0){
+ULT_HEAD->next->previous = ULT_HEAD;
+}
+*validContextReturned = PASS; 
+} else {
+*validContextReturned = FAIL; 
+}
+return EXTRA_NEW_NODE;
+}
+
+/*
+user thread exit function
+*/
+
+void uthread_exit() {
+int Remove_Result;
+LL_ULT_PRI_Q* EXTRA_NEW_NODE = LL_ULT_REMOVE_Q(&Remove_Result);
+if(Remove_Result == PASS){
+yield_temp_variable = EXTRA_NEW_NODE->priority;
+setcontext(EXTRA_NEW_NODE->context);
+} else {
+free(ULT_HEAD); // Release the memory space allocated for head node 
+ULT_HEAD = 0;
+exit(0);
+}
+}
+
+/*
+system initialize function
+*/ 
+
+void system_init() {
+ULT_HEAD = (LL_ULT_PRI_Q*) malloc(sizeof(LL_ULT_PRI_Q));
+ULT_HEAD->next = 0;
+ULT_HEAD->previous = 0;
+ULT_HEAD->context = 0;
+ULT_HEAD->priority = 0;
+}
+
+/**************************
+user thread create function
+***************************
+This user-level thread runs user_function(), with priority specified by argument priority. 
+This function returns 0 if succeeds, or -1 otherwise. 
+*/
+
+int uthread_create(void user_function(), int priority) {
+int return_value_create_function = FAIL;
+if(priority >= 0){
+
+ucontext_t* user_temp_thread_context = (ucontext_t*) malloc(sizeof(ucontext_t)); // create temporary thread context and allocate space to it
+getcontext(user_temp_thread_context);
+user_temp_thread_context->uc_stack.ss_sp = (char *) malloc(STACK);
+user_temp_thread_context->uc_stack.ss_size = STACK;
+makecontext(user_temp_thread_context, uthread_exit, 0); // pass temporary thread context to make context function 
+// now in this part we make sure that if the current thread terminates we call the next thread in the queue
+ucontext_t* threadContext = (ucontext_t*) malloc(sizeof(ucontext_t));
+getcontext(threadContext);
+threadContext->uc_stack.ss_sp = (char *) malloc(STACK);
+threadContext->uc_stack.ss_size = STACK;
+threadContext->uc_link= user_temp_thread_context;
+makecontext(threadContext, user_function, 0);
+
+return_value_create_function = LL_ULT_INSERT_Q(threadContext,priority);
+}
+else {
+printf("This is negative priority. I've not considered this case for this assignment as it is out of scope.\n");
+}
+return return_value_create_function;
+}
+
+/*************************
+user thread yield function
+*************************
+* The user thread requests to yield the kernel thread, which is currently running, to other user threads which has the highest priority level among the ready threads. 
+* This function returns 0 if succeeds, or -1 otherwise.
+*/
+
+int uthread_yield() {
+	int return_value_yield_function = FAIL; 
+	int Remove_Result;
+	int priority = yield_temp_variable;
+	LL_ULT_PRI_Q* EXTRA_NEW_NODE = LL_ULT_REMOVE_Q(&Remove_Result); // Removing the function from the queue and storing in the new node
+		if(Remove_Result == PASS){ 
+			ucontext_t* save_current_context = (ucontext_t*) malloc(sizeof(ucontext_t)); // allocating space to save current context
+			return_value_yield_function = LL_ULT_INSERT_Q(save_current_context, priority); // pass the value obtained from insert to stack function and set it to return value
+		if(return_value_yield_function == PASS){ 
+			yield_temp_variable = EXTRA_NEW_NODE->priority;
+			swapcontext(save_current_context,EXTRA_NEW_NODE->context); // interchange current context with that of the context of new node
+												}
+} else {
+		return_value_yield_function = PASS;
+		}
+		return return_value_yield_function;
+}
+
+
+
