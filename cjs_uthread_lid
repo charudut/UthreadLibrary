@@ -43,7 +43,7 @@ struct LL_ULT_PRI_Q{
 	struct LL_ULT_PRI_Q* next; 
 	struct LL_ULT_PRI_Q* previous; 
 	ucontext_t* context; 
-};
+	};
 typedef struct LL_ULT_PRI_Q LL_ULT_PRI_Q;
 
 /*
@@ -196,6 +196,3 @@ int uthread_yield() {
 		}
 		return return_value_yield_function;
 }
-
-
-
